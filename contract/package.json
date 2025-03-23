@@ -1,0 +1,20 @@
+{
+  "name": "contract",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "scripts.js",
+  "scripts": {
+    "compile": "npx solcjs --bin --abi --include-path node_modules/ --base-path . dino.sol -o build/",
+    "deploy": "node ./scripts.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5"
+  },
+  "devDependencies": {
+    "solc": "^0.8.29"
+  }
+}
