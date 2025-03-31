@@ -1,98 +1,117 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-/**
- * @title DinoDao
- * @dev A decentralized betting contract where players stake tokens based on the 
- * distance they expect to run. If they meet or exceed the target, they receive 
- * a reward. If they fail, their bet goes to the DAO treasury.
- */
-contract DinoDao {
-    /**
-     * @dev Struct to store player's bet details.
-     * @param distance The target distance the player aims to achieve.
-     * @param bet The amount of ETH the player has bet.
-     */
-    struct Dino {
-        uint256 distance; 
-        uint256 bet;    
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract DinoDao is Ownable {
+    struct DinoRun {
+        uint256 distance;
+        uint256 bet;
+        uint256 timestamp;
     }
 
-    /// @notice Address of the DAO treasury that collects lost bets.
-    address public daoTreasury; 
+    IERC20 public dinoToken;
+    address public daoTreasury;
+    uint256 public rewardMultiplier = 100;
 
-    /// @notice Mapping to track players' bets.
-    mapping(address => Dino) public players; 
+    mapping(address => DinoRun) public players;
+    mapping(address => uint256) public totalRewards;
 
-    /// @notice Event emitted when a player stakes tokens.
-    /// @param player The address of the player.
-    /// @param distance The target distance set by the player.
-    /// @param bet The amount of ETH staked.
-    event TokensStaked(address indexed player, uint256 distance, uint256 bet);
+    event TokensStaked(
+        address indexed player,
+        uint256 distance,
+        uint256 amount
+    );
+    event RewardPaid(address indexed player, uint256 reward, uint256 bonus);
+    event RunFailed(address indexed player, uint256 lostAmount);
+    event TreasuryUpdated(address newTreasury);
 
-    /// @notice Event emitted when a player successfully completes the run.
-    /// @param player The address of the player.
-    /// @param extraDistance The extra distance the player ran beyond the target.
-    /// @param reward The reward amount paid to the player.
-    event RewardPaid(address indexed player, uint256 extraDistance, uint256 reward);
-
-    /// @notice Event emitted when a player fails to reach the target distance.
-    /// @param player The address of the player.
-    /// @param targetDistance The distance the player aimed to reach.
-    /// @param actualDistance The actual distance the player achieved.
-    /// @param lostBet The bet amount lost to the DAO treasury.
-    event Failed(address indexed player, uint256 targetDistance, uint256 actualDistance, uint256 lostBet);
-
-    /// @dev Initializes the contract and sets the deployer as the DAO treasury.
-    constructor() {
-        daoTreasury = msg.sender; 
+    constructor(address _tokenAddress) Ownable(msg.sender) {
+        dinoToken = IERC20(_tokenAddress);
+        daoTreasury = msg.sender;
     }
 
-    /**
-     * @notice Allows players to stake ETH and set a target distance.
-     * @dev Players must specify a positive distance and send ETH as a bet.
-     * @param _distance The distance the player wants to achieve.
-     */
-    function stakeTokens(uint256 _distance) public payable {
-        require(msg.value > 0, "Bet amount must be greater than 0");
-        require(_distance > 0, "Distance must be greater than 0");
+    function stakeTokens(uint256 _distance, uint256 _amount) external {
+        require(_distance > 0, "Invalid distance");
+        require(_amount > 0, "Invalid amount");
 
-        players[msg.sender] = Dino(_distance, msg.value);
+        dinoToken.transferFrom(msg.sender, address(this), _amount);
+        players[msg.sender] = DinoRun(_distance, _amount, block.timestamp);
 
-        emit TokensStaked(msg.sender, _distance, msg.value);
+        emit TokensStaked(msg.sender, _distance, _amount);
     }
 
-    /**
-     * @notice Completes the player's run and determines if they win or lose.
-     * @dev If the player fails, the bet is transferred to the DAO treasury. 
-     * If they succeed, they receive their bet back plus a reward.
-     * @param _actualDistance The distance the player actually achieved.
-     */
-    function completeRun(uint256 _actualDistance) public {
-        require(players[msg.sender].bet > 0, "No active bet found");
+    function completeRun(uint256 _actualDistance) external {
+        DinoRun memory run = players[msg.sender];
+        require(run.bet > 0, "No active run");
 
-        uint256 targetDistance = players[msg.sender].distance;
-        uint256 betAmount = players[msg.sender].bet;
+        uint256 reward = 0;
+        uint256 bonus = 0;
 
-        if (_actualDistance < targetDistance) {
-            payable(daoTreasury).transfer(betAmount);
-            emit Failed(msg.sender, targetDistance, _actualDistance, betAmount);
-            delete players[msg.sender]; 
-            return;
-        }
+        if (_actualDistance >= run.distance) {
+            reward = run.bet;
 
-        uint256 extraDistance = _actualDistance - targetDistance;
-        uint256 reward = (extraDistance / 100) * 0.01 ether;
-        uint256 totalPayout = betAmount + reward;
+            uint256 extraDistance = _actualDistance - run.distance;
+            bonus = (extraDistance * rewardMultiplier * run.bet) / 10000;
 
-        if (address(this).balance >= totalPayout) {
-            payable(msg.sender).transfer(totalPayout);
-            emit RewardPaid(msg.sender, extraDistance, reward);
+            uint256 timeElapsed = (block.timestamp - run.timestamp) / 60;
+            uint256 timeBonus = (run.bet * timeElapsed) / 100;
+
+            uint256 totalPayout = reward + bonus + timeBonus;
+
+            require(
+                dinoToken.balanceOf(address(this)) >= totalPayout,
+                "Insufficient contract balance"
+            );
+
+            dinoToken.transfer(msg.sender, totalPayout);
+            totalRewards[msg.sender] += totalPayout;
+
+            emit RewardPaid(msg.sender, reward, bonus + timeBonus);
+        } else {
+            uint256 daoShare = (run.bet * 90) / 100;
+            uint256 userRefund = run.bet - daoShare;
+
+            dinoToken.transfer(daoTreasury, daoShare);
+            dinoToken.transfer(msg.sender, userRefund);
+
+            emit RunFailed(msg.sender, daoShare);
         }
 
         delete players[msg.sender];
     }
 
-    /// @notice Allows the contract to receive ETH.
-    receive() external payable {}
-} 
+    function setTreasury(address _newTreasury) external onlyOwner {
+        daoTreasury = _newTreasury;
+        emit TreasuryUpdated(_newTreasury);
+    }
+
+    function setRewardMultiplier(uint256 _multiplier) external onlyOwner {
+        require(_multiplier <= 1000, "Multiplier too high");
+        rewardMultiplier = _multiplier;
+    }
+
+    function withdrawExcessTokens(uint256 _amount) external onlyOwner {
+        require(
+            dinoToken.balanceOf(address(this)) >= _amount,
+            "Insufficient balance"
+        );
+        dinoToken.transfer(daoTreasury, _amount);
+    }
+
+    function getUserStats(
+        address _user
+    )
+        external
+        view
+        returns (
+            uint256 currentStake,
+            uint256 targetDistance,
+            uint256 totalEarned
+        )
+    {
+        DinoRun memory run = players[_user];
+        return (run.bet, run.distance, totalRewards[_user]);
+    }
+}
