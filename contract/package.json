@@ -7,7 +7,7 @@
   "type": "module",
   "main": "scripts.js",
   "scripts": {
-    "compile": "npx solcjs --bin --abi --include-path node_modules/ --base-path . dino.sol -o build1/",
+    "compile": "npx solcjs --bin --abi --include-path node_modules/ --base-path . dinoToken.sol -o dinotk_build/",
     "deploy": "node ./scripts.js"
   },
   "dependencies": {

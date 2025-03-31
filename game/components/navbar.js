@@ -1,9 +1,35 @@
 "use client";
 
-import { Gamepad2 } from "lucide-react";
+import { Coins, Gamepad2 } from "lucide-react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Image from "next/image";
+import useDinoBalance from "@/hooks/useDinoBalance";
+import { useEffect, useState } from "react";
+import { addTokenToWallet } from "@/utility/avail";
+import Cookies from "js-cookie";
 
 export default function Navbar() {
+  const { balance, loading } = useDinoBalance();
+  const [tokenAvail, setTokenAvail] = useState(false);
+
+  useEffect(() => {
+    const handleTokenAdd = async () => {
+      const isTokenAdded = Cookies.get("TokenAdded");
+      if (isTokenAdded === "true") {
+        setTokenAvail(true);
+        return;
+      }
+
+      if (balance === null || balance === 0) {
+        setTokenAvail(false);
+        return;
+      } else {
+        setTokenAvail(true);
+      }
+    };
+    handleTokenAdd();
+  }, [balance]);
+
   return (
     <>
       <nav className="w-full flex items-center justify-between px-4 md:px-6 py-3 bg-indigo-900/80 backdrop-filter backdrop-blur-md border-b-2 border-cyan-500/50 fixed top-0 left-0 z-50 dino-nav-glow">
@@ -16,8 +42,31 @@ export default function Navbar() {
             Web3 Dino
           </span>
         </div>
-        <div className="font-dino-text">
-          <ConnectButton label="CONNECT" />
+        <div className="flex justify-center items-center gap-5 font-dino-text">
+          <ConnectButton label="connect" showBalance={false} />
+          {tokenAvail ? (
+            <div className="flex justify-center items-center gap-3">
+              <Image
+                src="/sdino.png"
+                alt="Dino"
+                width={40}
+                height={40}
+                className="rounded-full"
+              />
+              <h1 className="text-white">
+                {loading ? "Loading..." : balance !== null ? balance : "N/A"} SDINO
+              </h1>
+            </div>
+          ) : (
+            <>
+              <button
+                className="px-4 py-2 text-xs sm:text-sm cursor-pointer font-semibold bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white rounded-md transition-all duration-300 relative overflow-hidden shadow-md hover:shadow-lg hover:shadow-cyan-400/50 group-hover:brightness-125 glowing-border flex items-center gap-2"
+                onClick={addTokenToWallet}
+              >
+                <Coins size={16} /> Add Token
+              </button>
+            </>
+          )}
         </div>
       </nav>
 
