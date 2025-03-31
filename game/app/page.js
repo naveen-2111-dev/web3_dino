@@ -113,7 +113,7 @@ export default function Home() {
               </div>
               <div className="bg-indigo-800/30 rounded-lg p-2 sm:p-3 text-center border border-cyan-500/20 dino-stat-panel">
                 <p className="text-xs text-cyan-200 font-dino-text mb-1 truncate">
-                  $DINO
+                  $SDINO
                 </p>
                 <p className="text-xl sm:text-2xl font-dino-text text-white">
                   {dynamicStats.tokens}
